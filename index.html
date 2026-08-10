@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibeExcel AI - 엑셀 시각화 & AI 데이터 진단 Web App</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#10b981',
+                            600: '#059669',
+                            900: '#064e3b',
+                        },
+                        dark: {
+                            bg: '#0f172a',
+                            card: '#1e293b',
+                            border: '#334155'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+
+    <!-- CDNs for React, SheetJS, Chart.js, Confetti -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Noto Sans KR', 'Plus Jakarta Sans', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(51, 65, 85, 0.8);
+        }
+        .glow-effect {
+            box-shadow: 0 0 25px rgba(16, 185, 129, 0.15);
+        }
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // 샘플 데이터셋 정의
+        const SAMPLE_DATASETS = {
+            sales: {
+                name: "2026 IT 제품 매출 (추천)",
+                sheets: ["매출실적"],
+                data: [
+                    { "월": "1월", "카테고리": "노트북", "매출액(만원)": 4500, "판매량": 30, "영업이익율(%)": 18 },
+                    { "월": "2월", "카테고리": "노트북", "매출액(만원)": 5200, "판매량": 35, "영업이익율(%)": 20 },
+                    { "월": "3월", "카테고리": "태블릿", "매출액(만원)": 3100, "판매량": 42, "영업이익율(%)": 15 },
+                    { "월": "4월", "카테고리": "모니터", "매출액(만원)": 2800, "판매량": 50, "영업이익율(%)": 12 },
+                    { "월": "5월", "카테고리": "노트북", "매출액(만원)": 6800, "판매량": 48, "영업이익율(%)": 22 },
+                    { "월": "6월", "카테고리": "스마트폰", "매출액(만원)": 7400, "판매량": 90, "영업이익율(%)": 25 },
+                    { "월": "7월", "카테고리": "스마트폰", "매출액(만원)": 8100, "판매량": 105, "영업이익율(%)": 27 }
+                ]
+            },
+            marketing: {
+                name: "마케팅 채널 ROI",
+                sheets: ["채널성과"],
+                data: [
+                    { "채널명": "구글 검색광고", "지출비용(만원)": 1200, "유입수": 45000, "전환수": 1350, "ROI(%)": 310 },
+                    { "채널명": "메타(인스타)", "지출비용(만원)": 850, "유입수": 38000, "전환수": 910, "ROI(%)": 240 },
+                    { "채널명": "유튜브 PPL", "지출비용(만원)": 2000, "유입수": 82000, "전환수": 2050, "ROI(%)": 285 },
+                    { "채널명": "네이버 SA", "지출비용(만원)": 1500, "유입수": 51000, "전환수": 1780, "ROI(%)": 330 },
+                    { "채널명": "이메일 뉴스레터", "지출비용(만원)": 150, "유입수": 8000, "전환수": 480, "ROI(%)": 520 }
+                ]
+            },
+            buggy: {
+                name: "AI 오류 진단 체험용 샘플",
+                sheets: ["원천데이터"],
+                data: [
+                    { "프로젝트": "웹앱 개편", "담당자": "김철수", "진척율": 85, "버그수": 3, "예산": 3000 },
+                    { "프로젝트": "모바일 앱", "담당자": "이영희", "진척율": null, "버그수": 12, "예산": "미정" },
+                    { "프로젝트": "AI 모델링", "담당자": null, "진척율": 40, "버그수": null, "예산": 5500 },
+                    { "프로젝트": "보안 점검", "담당자": "박민수", "진척율": 100, "버그수": 0, "예산": 1200 },
+                    { "프로젝트": "웹앱 개편", "담당자": "김철수", "진척율": 85, "버그수": 3, "예산": 3000 }
+                ]
+            }
+        };
+
+        // 차트 팔레트 설정
+        const COLOR_PALETTES = {
+            neon: {
+                name: "네온 사이버",
+                bg: ['rgba(56, 189, 248, 0.7)', 'rgba(168, 85, 247, 0.7)', 'rgba(236, 72, 153, 0.7)', 'rgba(34, 197, 94, 0.7)', 'rgba(251, 146, 60, 0.7)'],
+                border: ['#38bdf8', '#a855f7', '#ec4899', '#22c55e', '#fb923c']
+            },
+            emerald: {
+                name: "에메랄드 포레스트",
+                bg: ['rgba(16, 185, 129, 0.7)', 'rgba(20, 184, 166, 0.7)', 'rgba(59, 130, 246, 0.7)', 'rgba(14, 165, 233, 0.7)', 'rgba(167, 243, 208, 0.7)'],
+                border: ['#10b981', '#14b8a6', '#3b82f6', '#0ea5e9', '#a7f3d0']
+            },
+            sunset: {
+                name: "선셋 파스텔",
+                bg: ['rgba(244, 63, 94, 0.7)', 'rgba(251, 146, 60, 0.7)', 'rgba(250, 204, 21, 0.7)', 'rgba(192, 132, 252, 0.7)', 'rgba(244, 114, 182, 0.7)'],
+                border: ['#f43f5e', '#fb923c', '#facc15', '#c084fc', '#f472b6']
+            }
+        };
+
+        function App() {
+            const [data, setData] = useState(SAMPLE_DATASETS.sales.data);
+            const [fileName, setFileName] = useState("2026_IT_Product_Sales.xlsx");
+            const [sheets, setSheets] = useState(["매출실적"]);
+            const [activeSheet, setActiveSheet] = useState("매출실적");
+            
+            // 차트 설정
+            const [chartType, setChartType] = useState('bar'); // bar, line, pie, doughnut, radar
+            const [xAxis, setXAxis] = useState('');
+            const [yAxis, setYAxis] = useState('');
+            const [palette, setPalette] = useState('neon');
+            
+            // UI 상태
+            const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, table, ai
+            const [isDragging, setIsDragging] = useState(false);
+            const [isLoading, setIsLoading] = useState(false);
+            
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            // 헤더 자동 탐지 및 데이터 분석
+            const headers = useMemo(() => {
+                if (!data || data.length === 0) return [];
+                return Object.keys(data[0]);
+            }, [data]);
+
+            // 숫자로 추정되는 열 분류
+            const numericHeaders = useMemo(() => {
+                if (!data || data.length === 0) return [];
+                return headers.filter(h => {
+                    const sampleValues = data.map(row => row[h]).filter(val => val !== null && val !== undefined && val !== '');
+                    return sampleValues.some(val => !isNaN(Number(val)));
+                });
+            }, [data, headers]);
+
+            // 초기 축 설정 자동 지정
+            useEffect(() => {
+                if (headers.length > 0) {
+                    if (!xAxis || !headers.includes(xAxis)) {
+                        setXAxis(headers[0]);
+                    }
+                    if (!yAxis || !numericHeaders.includes(yAxis)) {
+                        setYAxis(numericHeaders[0] || headers[1] || headers[0]);
+                    }
+                }
+            }, [headers, numericHeaders]);
+
+            // 데이터 진단 엔진 (AI 오류 및 인사이트 자동생성)
+            const diagnostics = useMemo(() => {
+                if (!data || data.length === 0) return null;
+
+                let nullCount = 0;
+                let duplicateRows = 0;
+                let typeErrors = [];
+                const rowCount = data.length;
+                const colCount = headers.length;
+                
+                // 중복 체크 집합
+                const seen = new Set();
+
+                data.forEach((row, rowIndex) => {
+                    const rowStr = JSON.stringify(row);
+                    if (seen.has(rowStr)) duplicateRows++;
+                    else seen.add(rowStr);
+
+                    headers.forEach(h => {
+                        const val = row[h];
+                        if (val === null || val === undefined || val === '') {
+                            nullCount++;
+                        }
+                    });
+                });
+
+                // 데이터 건강도 점수 산출
+                const totalCells = rowCount * colCount;
+                const errorPenalty = (nullCount * 5) + (duplicateRows * 10);
+                const healthScore = Math.max(10, Math.min(100, Math.round(100 - (errorPenalty / (totalCells || 1)) * 100)));
+
+                // 주요 통계 계산 (Y축 기준)
+                let yStats = null;
+                if (yAxis) {
+                    const numVals = data.map(r => Number(r[yAxis])).filter(v => !isNaN(v));
+                    if (numVals.length > 0) {
+                        const sum = numVals.reduce((a, b) => a + b, 0);
+                        const avg = sum / numVals.length;
+                        const max = Math.max(...numVals);
+                        const min = Math.min(...numVals);
+                        
+                        // 최고 항목 찾기
+                        const maxRow = data.find(r => Number(r[yAxis]) === max);
+                        const maxLabel = maxRow && xAxis ? maxRow[xAxis] : 'N/A';
+
+                        yStats = { sum, avg, max, min, maxLabel };
+                    }
+                }
+
+                // AI 추천 가이드 메시지 생성
+                const insights = [];
+                if (healthScore >= 90) {
+                    insights.push({ type: 'success', text: "데이터 정제 상태가 매우 우수합니다! 시각화 자료를 바로 보고서에 활용할 수 있습니다." });
+                } else if (healthScore >= 70) {
+                    insights.push({ type: 'warning', text: `누락된 데이터(${nullCount}개) 또는 중복 항목이 감지되었습니다. 분석 결과에 왜곡이 생길 수 있습니다.` });
+                } else {
+                    insights.push({ type: 'danger', text: "데이터 품질에 주의가 필요합니다. 결측치와 중복 데이터 정제를 권장합니다." });
+                }
+
+                if (yStats) {
+                    insights.push({
+                        type: 'info',
+                        text: `가장 높은 [${yAxis}] 기록은 '${yStats.maxLabel}' 항목으로, 수치는 ${yStats.max.toLocaleString()} 입니다. (전체 평균: ${Math.round(yStats.avg).toLocaleString()})`
+                    });
+                }
+
+                return {
+                    healthScore,
+                    rowCount,
+                    colCount,
+                    nullCount,
+                    duplicateRows,
+                    yStats,
+                    insights
+                };
+            }, [data, headers, xAxis, yAxis]);
+
+            // Chart.js 인스턴스 렌더링
+            useEffect(() => {
+                if (!chartRef.current || !data || data.length === 0 || !xAxis || !yAxis) return;
+
+                const ctx = chartRef.current.getContext('2d');
+                if (chartInstance.current) {
+                    chartInstance.current.destroy();
+                }
+
+                const labels = data.map(r => String(r[xAxis] || '무제'));
+                const datasetValues = data.map(r => {
+                    const val = Number(r[yAxis]);
+                    return isNaN(val) ? 0 : val;
+                });
+
+                const curPalette = COLOR_PALETTES[palette] || COLOR_PALETTES.neon;
+
+                chartInstance.current = new Chart(ctx, {
+                    type: chartType,
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: yAxis,
+                            data: datasetValues,
+                            backgroundColor: chartType === 'line' ? 'rgba(56, 189, 248, 0.2)' : curPalette.bg,
+                            borderColor: chartType === 'line' ? '#38bdf8' : curPalette.border,
+                            borderWidth: 2,
+                            fill: chartType === 'line',
+                            tension: 0.3,
+                            pointRadius: 5,
+                            pointHoverRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: { color: '#cbd5e1', font: { family: 'Noto Sans KR', size: 13 } }
+                            },
+                            tooltip: {
+                                backgroundColor: '#1e293b',
+                                titleColor: '#38bdf8',
+                                bodyColor: '#f8fafc',
+                                borderColor: '#334155',
+                                borderWidth: 1,
+                                padding: 12,
+                                boxPadding: 6
+                            }
+                        },
+                        scales: ['pie', 'doughnut', 'radar'].includes(chartType) ? {} : {
+                            x: {
+                                grid: { color: 'rgba(51, 65, 85, 0.4)' },
+                                ticks: { color: '#94a3b8', font: { family: 'Noto Sans KR' } }
+                            },
+                            y: {
+                                grid: { color: 'rgba(51, 65, 85, 0.4)' },
+                                ticks: { color: '#94a3b8', font: { family: 'Noto Sans KR' } }
+                            }
+                        }
+                    }
+                });
+
+                return () => {
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
+                };
+            }, [data, chartType, xAxis, yAxis, palette, activeTab]);
+
+            // 엑셀 파일 핸들링
+            const handleFileUpload = (file) => {
+                if (!file) return;
+                setIsLoading(true);
+                setFileName(file.name);
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const bstr = e.target.result;
+                        const workbook = XLSX.read(bstr, { type: 'binary' });
+                        const sheetList = workbook.SheetNames;
+                        setSheets(sheetList);
+                        setActiveSheet(sheetList[0]);
+
+                        const worksheet = workbook.Sheets[sheetList[0]];
+                        const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+                        if (json && json.length > 0) {
+                            setData(json);
+                            confetti({ particleCount: 80, spread: 60, origin: { y: 0.8 } });
+                        } else {
+                            alert("엑셀 파일에 유효한 데이터가 없습니다.");
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert("파일을 읽는 중 오류가 발생했습니다. 올바른 .xlsx 또는 .csv 파일인지 확인하세요.");
+                    } finally {
+                        setIsLoading(false);
+                    }
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            // 샘플 데이터 로드
+            const loadSample = (key) => {
+                const sample = SAMPLE_DATASETS[key];
+                if (sample) {
+                    setIsLoading(true);
+                    setTimeout(() => {
+                        setData(sample.data);
+                        setFileName(`${sample.name}.xlsx`);
+                        setSheets(sample.sheets);
+                        setActiveSheet(sample.sheets[0]);
+                        setIsLoading(false);
+                        confetti({ particleCount: 50, spread: 50, origin: { y: 0.8 } });
+                    }, 200);
+                }
+            };
+
+            // 드래그 앤 드롭 이벤트
+            const handleDrop = (e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    handleFileUpload(e.dataTransfer.files[0]);
+                }
+            };
+
+            // 차트 이미지 다운로드
+            const downloadChartPNG = () => {
+                if (!chartRef.current) return;
+                const link = document.createElement('a');
+                link.download = `VibeChart_${fileName.replace(/\.[^/.]+$/, "")}.png`;
+                link.href = chartRef.current.toDataURL('image/png', 1.0);
+                link.click();
+            };
+
+            return (
+                <div class="min-h-screen flex flex-col">
+                    <!-- 상단 헤더 -->
+                    <header class="border-b border-dark-border bg-dark-card/90 sticky top-0 z-50 backdrop-blur-md">
+                        <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-brand-500 to-indigo-600 flex items-center justify-center text-white text-xl shadow-lg shadow-brand-500/20">
+                                    <i class="fa-solid fa-chart-column"></i>
+                                </div>
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <h1 class="text-xl font-extrabold tracking-tight bg-gradient-to-r from-white via-emerald-200 to-teal-400 bg-clip-text text-transparent">
+                                            VibeExcel AI
+                                        </h1>
+                                        <span class="px-2 py-0.5 text-xs font-bold bg-brand-500/20 text-brand-500 rounded-full border border-brand-500/30">
+                                            v2.5 Blueprint
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-slate-400">범용 엑셀 시각화 & AI 데이터 진단 엔진</p>
+                                </div>
+                            </div>
+
+                            <!-- 빠른 샘플 버튼 -->
+                            <div class="hidden md:flex items-center gap-2">
+                                <span class="text-xs text-slate-400 mr-1"><i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i> 샘플 체험:</span>
+                                <button onClick={() => loadSample('sales')} class="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition">
+                                    📊 IT 매출
+                                </button>
+                                <button onClick={() => loadSample('marketing')} class="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition">
+                                    🎯 마케팅 ROI
+                                </button>
+                                <button onClick={() => loadSample('buggy')} class="px-3 py-1.5 text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 rounded-lg border border-amber-500/30 transition">
+                                    ⚠️ 오류 진단
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <!-- 메인 컨텐츠 레이아웃 -->
+                    <main class="flex-grow max-w-7xl w-full mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        
+                        <!-- 왼쪽 컨트롤 패널 (4 컬럼) -->
+                        <div class="lg:col-span-4 space-y-6">
+                            
+                            <!-- 파일 업로드 및 드롭존 -->
+                            <div 
+                                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                                onDragLeave={() => setIsDragging(false)}
+                                onDrop={handleDrop}
+                                class={`glass-panel rounded-2xl p-6 text-center border-2 border-dashed transition-all relative overflow-hidden ${
+                                    isDragging ? 'border-brand-500 bg-brand-500/10 scale-[1.02]' : 'border-slate-700 hover:border-slate-500'
+                                }`}
+                            >
+                                <input 
+                                    type="file" 
+                                    accept=".xlsx, .xls, .csv" 
+                                    onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])}
+                                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                />
+                                <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-slate-800 flex items-center justify-center text-brand-500 text-2xl">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                                </div>
+                                <h3 class="font-bold text-slate-200 mb-1">엑셀 파일 클릭 또는 드래그</h3>
+                                <p class="text-xs text-slate-400 mb-4">.xlsx, .xls, .csv 지원 (클라이언트 보안 처리)</p>
+                                
+                                <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-emerald-400 font-mono truncate max-w-full">
+                                    <i class="fa-regular fa-file-excel"></i>
+                                    <span class="truncate">{fileName}</span>
+                                </div>
+                            </div>
+
+                            <!-- 차트 컨트롤 설정 -->
+                            <div class="glass-panel rounded-2xl p-6 space-y-5">
+                                <div class="flex items-center justify-between pb-3 border-b border-slate-700">
+                                    <h2 class="font-bold text-slate-200 flex items-center gap-2">
+                                        <i class="fa-solid fa-sliders text-brand-500"></i> 시각화 커스텀
+                                    </h2>
+                                    <span class="text-xs text-slate-400">{headers.length}개 열 감지</span>
+                                </div>
+
+                                <!-- 차트 유형 선택 -->
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 mb-2">차트 형태 (Type)</label>
+                                    <div class="grid grid-cols-5 gap-1.5 p-1 bg-slate-900 rounded-xl border border-slate-800">
+                                        {[
+                                            { id: 'bar', icon: 'fa-chart-simple', label: '막대' },
+                                            { id: 'line', icon: 'fa-chart-line', label: '꺾은선' },
+                                            { id: 'pie', icon: 'fa-chart-pie', label: '원형' },
+                                            { id: 'doughnut', icon: 'fa-circle-notch', label: '도넛' },
+                                            { id: 'radar', icon: 'fa-compass', label: '레이더' }
+                                        ].map(item => (
+                                            <button
+                                                key={item.id}
+                                                onClick={() => setChartType(item.id)}
+                                                class={`flex flex-col items-center py-2 px-1 rounded-lg text-xs font-medium transition ${
+                                                    chartType === item.id 
+                                                    ? 'bg-brand-500 text-slate-950 font-bold shadow' 
+                                                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                                                }`}
+                                            >
+                                                <i class={`fa-solid ${item.icon} text-sm mb-1`}></i>
+                                                {item.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <!-- X축 기준 선택 -->
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 mb-1.5">
+                                        <i class="fa-solid fa-arrows-left-right text-slate-500 mr-1"></i> X축 기준 (구분 항목)
+                                    </label>
+                                    <select 
+                                        value={xAxis} 
+                                        onChange={(e) => setXAxis(e.target.value)}
+                                        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500"
+                                    >
+                                        {headers.map(h => (
+                                            <option key={h} value={h}>{h}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <!-- Y축 수치 선택 -->
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 mb-1.5">
+                                        <i class="fa-solid fa-arrows-up-down text-slate-500 mr-1"></i> Y축 수치 (비교 수치)
+                                    </label>
+                                    <select 
+                                        value={yAxis} 
+                                        onChange={(e) => setYAxis(e.target.value)}
+                                        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500"
+                                    >
+                                        {headers.map(h => (
+                                            <option key={h} value={h}>
+                                                {h} {numericHeaders.includes(h) ? ' (숫자)' : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <!-- 컬러 테마 선택 -->
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 mb-1.5">컬러 테마 (Palette)</label>
+                                    <div class="grid grid-cols-3 gap-2">
+                                        {Object.keys(COLOR_PALETTES).map(pKey => (
+                                            <button
+                                                key={pKey}
+                                                onClick={() => setPalette(pKey)}
+                                                class={`py-1.5 px-2 rounded-lg text-xs border text-center transition ${
+                                                    palette === pKey
+                                                    ? 'border-brand-500 bg-brand-500/10 text-brand-400 font-bold'
+                                                    : 'border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700'
+                                                }`}
+                                            >
+                                                {COLOR_PALETTES[pKey].name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <!-- PNG 다운로드 버튼 -->
+                                <button 
+                                    onClick={downloadChartPNG}
+                                    class="w-full py-3 bg-gradient-to-r from-brand-500 to-teal-500 hover:from-brand-600 hover:to-teal-600 text-slate-950 font-bold rounded-xl shadow-lg shadow-brand-500/20 transition flex items-center justify-center gap-2"
+                                >
+                                    <i class="fa-solid fa-file-image"></i> 차트 고화질 PNG 저장
+                                </button>
+                            </div>
+
+                        </div>
+
+                        <!-- 오른쪽 메인 뷰어 영역 (8 컬럼) -->
+                        <div class="lg:col-span-8 space-y-6">
+                            
+                            <!-- 탭 메뉴 및 대시보드 스탯 -->
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel rounded-2xl p-4">
+                                <div class="flex items-center gap-2 p-1 bg-slate-900 rounded-xl border border-slate-800">
+                                    <button 
+                                        onClick={() => setActiveTab('dashboard')}
+                                        class={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+                                            activeTab === 'dashboard' ? 'bg-brand-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
+                                        }`}
+                                    >
+                                        <i class="fa-solid fa-chart-line"></i> 차트 대시보드
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveTab('table')}
+                                        class={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+                                            activeTab === 'table' ? 'bg-brand-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
+                                        }`}
+                                    >
+                                        <i class="fa-solid fa-table"></i> 원본 표 ({data.length})
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveTab('ai')}
+                                        class={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+                                            activeTab === 'ai' ? 'bg-brand-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
+                                        }`}
+                                    >
+                                        <i class="fa-solid fa-robot"></i> AI 데이터 진단
+                                        {diagnostics && diagnostics.nullCount > 0 && (
+                                            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                                        )}
+                                    </button>
+                                </div>
+
+                                <!-- 건강도 매직 배지 -->
+                                {diagnostics && (
+                                    <div class="flex items-center gap-3 px-3 py-1.5 bg-slate-900/80 rounded-xl border border-slate-800">
+                                        <div class="text-right">
+                                            <div class="text-[10px] text-slate-400">데이터 건강도</div>
+                                            <div class="text-xs font-bold text-emerald-400">{diagnostics.healthScore}점 / 100점</div>
+                                        </div>
+                                        <div class="w-8 h-8 rounded-full border-2 border-emerald-500 flex items-center justify-center text-xs font-black text-emerald-400">
+                                            {diagnostics.healthScore}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <!-- TAB 1: 시각화 차트 대시보드 -->
+                            {activeTab === 'dashboard' && (
+                                <div class="glass-panel rounded-2xl p-6 glow-effect space-y-6">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                                                <span>{yAxis}</span>
+                                                <span class="text-xs text-slate-400 font-normal">by {xAxis}</span>
+                                            </h3>
+                                            <p class="text-xs text-slate-400">자동 시각화 엔진에 의해 실시간 렌더링 중입니다.</p>
+                                        </div>
+                                        <div class="text-xs text-slate-400 bg-slate-800 px-3 py-1 rounded-lg">
+                                            {data.length}개 항목 비교
+                                        </div>
+                                    </div>
+
+                                    <!-- 캔버스 영역 -->
+                                    <div class="relative h-[380px] w-full bg-slate-900/50 rounded-xl p-4 border border-slate-800">
+                                        {isLoading && (
+                                            <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-3 rounded-xl">
+                                                <i class="fa-solid fa-spinner fa-spin text-3xl text-brand-500"></i>
+                                                <span class="text-sm font-medium text-slate-300">엑셀 분석 및 시각화 생성 중...</span>
+                                            </div>
+                                        )}
+                                        <canvas ref={chartRef}></canvas>
+                                    </div>
+
+                                    <!-- 하단 요약 카드 -->
+                                    {diagnostics && diagnostics.yStats && (
+                                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
+                                            <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                                <div class="text-xs text-slate-400 mb-1">합계 (Sum)</div>
+                                                <div class="text-base font-extrabold text-slate-100">
+                                                    {Math.round(diagnostics.yStats.sum).toLocaleString()}
+                                                </div>
+                                            </div>
+                                            <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                                <div class="text-xs text-slate-400 mb-1">평균 (Average)</div>
+                                                <div class="text-base font-extrabold text-brand-400">
+                                                    {Math.round(diagnostics.yStats.avg).toLocaleString()}
+                                                </div>
+                                            </div>
+                                            <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                                <div class="text-xs text-slate-400 mb-1">최고 수치 (Max)</div>
+                                                <div class="text-base font-extrabold text-emerald-400">
+                                                    {diagnostics.yStats.max.toLocaleString()}
+                                                </div>
+                                            </div>
+                                            <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                                <div class="text-xs text-slate-400 mb-1">최저 수치 (Min)</div>
+                                                <div class="text-base font-extrabold text-slate-400">
+                                                    {diagnostics.yStats.min.toLocaleString()}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <!-- TAB 2: 원본 데이터 데이터표 -->
+                            {activeTab === 'table' && (
+                                <div class="glass-panel rounded-2xl p-6 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h3 class="font-bold text-slate-200">엑셀 구조화 파싱 표</h3>
+                                        <span class="text-xs text-slate-400">총 {data.length}행 × {headers.length}열</span>
+                                    </div>
+
+                                    <div class="overflow-x-auto rounded-xl border border-slate-800 max-h-[420px]">
+                                        <table class="w-full text-left text-xs text-slate-300">
+                                            <thead class="bg-slate-900 text-brand-400 font-bold sticky top-0 border-b border-slate-800">
+                                                <tr>
+                                                    <th class="p-3 w-12 text-center border-r border-slate-800">#</th>
+                                                    {headers.map(h => (
+                                                        <th key={h} class="p-3 border-r border-slate-800 whitespace-nowrap">
+                                                            {h}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-slate-800/60 bg-slate-950/40">
+                                                {data.map((row, idx) => (
+                                                    <tr key={idx} class="hover:bg-slate-800/50 transition">
+                                                        <td class="p-3 text-center text-slate-500 border-r border-slate-800">{idx + 1}</td>
+                                                        {headers.map(h => {
+                                                            const val = row[h];
+                                                            const isEmpty = val === null || val === undefined || val === '';
+                                                            return (
+                                                                <td key={h} class={`p-3 border-r border-slate-800 whitespace-nowrap ${isEmpty ? 'bg-amber-500/10 text-amber-400 font-medium' : ''}`}>
+                                                                    {isEmpty ? '(결측치)' : String(val)}
+                                                                </td>
+                                                            );
+                                                        })}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            <!-- TAB 3: AI 데이터 진단 리포트 -->
+                            {activeTab === 'ai' && diagnostics && (
+                                <div class="glass-panel rounded-2xl p-6 space-y-6">
+                                    <div class="flex items-center gap-3 pb-4 border-b border-slate-700">
+                                        <div class="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-xl border border-purple-500/30">
+                                            <i class="fa-solid fa-robot"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-bold text-slate-100">AI 데이터 오류 진단 및 가이드</h3>
+                                            <p class="text-xs text-slate-400">데이터 세트의 정제 상태와 비즈니스 인사이트를 자동 도출했습니다.</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- 지표 요약 4종 카드 -->
+                                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                        <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800">
+                                            <div class="text-xs text-slate-400">총 데이터 행</div>
+                                            <div class="text-2xl font-bold text-slate-100 mt-1">{diagnostics.rowCount}행</div>
+                                        </div>
+                                        <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800">
+                                            <div class="text-xs text-slate-400">누락된 빈 값 (Null)</div>
+                                            <div class={`text-2xl font-bold mt-1 ${diagnostics.nullCount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                {diagnostics.nullCount}개
+                                            </div>
+                                        </div>
+                                        <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800">
+                                            <div class="text-xs text-slate-400">중복 데이터 행</div>
+                                            <div class={`text-2xl font-bold mt-1 ${diagnostics.duplicateRows > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                                {diagnostics.duplicateRows}개
+                                            </div>
+                                        </div>
+                                        <div class="p-4 bg-slate-900/60 rounded-xl border border-slate-800">
+                                            <div class="text-xs text-slate-400">품질 상태 평가</div>
+                                            <div class="text-2xl font-bold text-brand-400 mt-1">
+                                                {diagnostics.healthScore >= 80 ? '양호' : '개선 필요'}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- AI 인사이트 리스트 -->
+                                    <div class="space-y-3">
+                                        <h4 class="text-sm font-bold text-slate-300 flex items-center gap-2">
+                                            <i class="fa-solid fa-lightbulb text-amber-400"></i> AI 분석 리포트 & 가이드
+                                        </h4>
+                                        {diagnostics.insights.map((item, i) => (
+                                            <div 
+                                                key={i} 
+                                                class={`p-4 rounded-xl border text-xs leading-relaxed flex items-start gap-3 ${
+                                                    item.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' :
+                                                    item.type === 'warning' ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' :
+                                                    item.type === 'danger' ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' :
+                                                    'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                                                }`}
+                                            >
+                                                <i class="fa-solid fa-circle-info text-base mt-0.5"></i>
+                                                <div>{item.text}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <!-- AI 추천 수정 가이드 박스 -->
+                                    <div class="p-4 bg-purple-950/30 border border-purple-500/20 rounded-xl space-y-2">
+                                        <div class="text-xs font-bold text-purple-300 flex items-center gap-1.5">
+                                            <i class="fa-solid fa-wand-magic"></i> 엑셀 파일 수정 추천 팁:
+                                        </div>
+                                        <ul class="text-xs text-slate-400 space-y-1 list-disc list-inside">
+                                            <li>숫자 데이터 열에 '미정', 'N/A' 등 문자가 혼용되어 있는지 확인하세요.</li>
+                                            <li>헤더 병합셀(Merge Cells)을 해제하고 단일 행 헤더 구조로 정밀화하면 파싱 정확도가 높아집니다.</li>
+                                            <li>결측치가 있는 경우 0 또는 평균값으로 채워 넣으면 차트 연속성이 보장됩니다.</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+
+                    </main>
+
+                    <!-- 푸터 -->
+                    <footer class="border-t border-dark-border py-6 text-center text-xs text-slate-500 mt-auto">
+                        <p>© 2026 VibeExcel AI Blueprint - Vibe Coding Execution Web Application</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
