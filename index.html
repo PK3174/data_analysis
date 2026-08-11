@@ -29,11 +29,8 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <!-- Babel CDN (JSX 변환용) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- SheetJS 및 한글 인코딩(EUC-KR/CP949) 지원 라이브러리 -->
+    <!-- SheetJS CDN -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/cpexcel.full.min.js"></script>
-    
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -164,40 +161,61 @@
                 });
             };
 
-            // 한글 인코딩(EUC-KR / CP949 / UTF-8) 자동 처리 업로드 로직
+            // 파일 업로드 처리 (공공데이터 CSV EUC-KR 완전 대응)
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
 
-                const reader = new FileReader();
-                reader.onload = (evt) => {
-                    try {
-                        const buffer = evt.target.result;
-                        
-                        // 1차 시도: UTF-8 / 바이너리로 읽기
-                        let wb = XLSX.read(buffer, { type: 'array' });
-                        let wsname = wb.SheetNames[0];
-                        let ws = wb.Sheets[wsname];
-                        let jsonData = XLSX.utils.sheet_to_json(ws);
+                const isCsv = file.name.endsWith('.csv');
 
-                        // 한글 깨짐 검사 (첫 번째 키에 깨진 특수문자가 포함되어 있으면 CP949/EUC-KR로 재시도)
-                        if (jsonData.length > 0) {
-                            const firstKey = Object.keys(jsonData[0])[0];
-                            if (/[\uFFFD\u00BD\u00C0-\u00FF]/.test(firstKey) || firstKey.includes('½') || firstKey.includes('¾')) {
-                                // 2차 시도: CP949 (한글 EUC-KR) 인코딩 강제 지정
-                                wb = XLSX.read(buffer, { type: 'array', codepage: 949 });
-                                wsname = wb.SheetNames[0];
-                                ws = wb.Sheets[wsname];
-                                jsonData = XLSX.utils.sheet_to_json(ws);
+                // CSV 파일인 경우 브라우저 인코딩(EUC-KR) 우선 처리
+                if (isCsv) {
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        try {
+                            let text = evt.target.result;
+                            
+                            // 한글 깨짐 검사 (깨진 특수문자 포함 시 UTF-8로 재시도)
+                            if (text.includes('') || text.includes('½') || text.includes('¾')) {
+                                const utf8Reader = new FileReader();
+                                utf8Reader.onload = (utfEvt) => {
+                                    parseCsvString(utfEvt.target.result, file.name);
+                                };
+                                utf8Reader.readAsText(file, 'utf-8');
+                            } else {
+                                parseCsvString(text, file.name);
                             }
+                        } catch (err) {
+                            alert('CSV 파일을 읽는 중 오류가 발생했습니다.');
                         }
+                    };
+                    reader.readAsText(file, 'euc-kr');
+                } else {
+                    // XLSX 일반 엑셀 파일 처리
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        try {
+                            const bstr = evt.target.result;
+                            const wb = XLSX.read(bstr, { type: 'binary' });
+                            const wsname = wb.SheetNames[0];
+                            const ws = wb.Sheets[wsname];
+                            const jsonData = XLSX.utils.sheet_to_json(ws);
+                            processData(jsonData, file.name);
+                        } catch (err) {
+                            alert('엑셀 파일을 읽는 중 오류가 발생했습니다.');
+                        }
+                    };
+                    reader.readAsBinaryString(file);
+                }
+            };
 
-                        processData(jsonData, file.name);
-                    } catch (err) {
-                        alert('엑셀 파일을 읽는 중 오류가 발생했습니다. 올바른 .xlsx 또는 .csv 파일인지 확인해 주세요.');
-                    }
-                };
-                reader.readAsArrayBuffer(file);
+            // CSV 텍스트 문자열 파싱 함수
+            const parseCsvString = (csvText, fileName) => {
+                const wb = XLSX.read(csvText, { type: 'string' });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const jsonData = XLSX.utils.sheet_to_json(ws);
+                processData(jsonData, fileName);
             };
 
             const loadSampleData = (type) => {
