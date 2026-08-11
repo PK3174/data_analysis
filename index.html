@@ -3,438 +3,214 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoViz AI - 엑셀 데이터 자동 시각화 & AI 진단</title>
-    <!-- Tailwind CSS CDN -->
+    <title>공공데이터 CSV 시각화 도구</title>
+    
+    <!-- Tailwind CSS (기본 스타일링용) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js (그래프 시각화) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- PapaParse (CSV 전문 파서: 인코딩 완벽 지원) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-gray-100 p-8 font-sans">
+    <div class="max-w-6xl mx-auto bg-white rounded-xl shadow-lg p-8">
+        <h1 class="text-2xl font-bold text-gray-800 mb-6">📊 공공데이터 CSV 전용 시각화 도구</h1>
+
+        <!-- 컨트롤 패널 -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-blue-50 p-5 rounded-lg border border-blue-100">
+            <!-- 1. 파일 업로드 -->
+            <div class="col-span-1 md:col-span-2">
+                <label class="block text-sm font-bold text-gray-700 mb-2">1. CSV 파일 업로드</label>
+                <input type="file" id="fileInput" accept=".csv" 
+                    class="block w-full text-sm text-gray-600 
+                    file:mr-4 file:py-2 file:px-4 
+                    file:rounded-md file:border-0 
+                    file:text-sm file:font-semibold 
+                    file:bg-blue-600 file:text-white 
+                    hover:file:bg-blue-700 cursor-pointer bg-white border border-gray-300 rounded-md">
+            </div>
+
+            <!-- 2. 인코딩 선택 -->
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-2">2. 인코딩 (글자 깨짐 시 변경)</label>
+                <select id="encodingSelect" class="block w-full rounded-md border border-gray-300 py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white">
+                    <option value="EUC-KR" selected>EUC-KR (공공데이터 기본)</option>
+                    <option value="UTF-8">UTF-8</option>
+                </select>
+            </div>
+            
+            <!-- 3. 차트 종류 -->
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-2">3. 차트 종류</label>
+                <select id="chartTypeSelect" class="block w-full rounded-md border border-gray-300 py-2.5 px-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-white">
+                    <option value="bar">막대 그래프 (Bar)</option>
+                    <option value="line">선 그래프 (Line)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 축 설정 패널 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-2">X축 설정 (기준 데이터)</label>
+                <select id="xAxisSelect" class="block w-full rounded-md border border-gray-300 py-2.5 px-3 text-sm bg-white disabled:bg-gray-100 disabled:text-gray-400" disabled>
+                    <option>데이터를 먼저 업로드하세요</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-2">Y축 설정 (수치 데이터)</label>
+                <select id="yAxisSelect" class="block w-full rounded-md border border-gray-300 py-2.5 px-3 text-sm bg-white disabled:bg-gray-100 disabled:text-gray-400" disabled>
+                    <option>데이터를 먼저 업로드하세요</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 차트 영역 -->
+        <div class="relative h-[500px] w-full border border-gray-200 rounded-lg p-4 bg-white flex items-center justify-center">
+            <p id="placeholderText" class="text-gray-400 text-lg absolute">📂 CSV 파일을 업로드하면 이곳에 차트가 표시됩니다.</p>
+            <canvas id="myChart"></canvas>
+        </div>
+    </div>
+
     <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        dark: {
-                            bg: '#0F172A',
-                            card: '#1E293B',
-                            border: '#334155',
-                            text: '#F8FAFC',
-                            subtext: '#94A3B8'
-                        }
+        // 전역 변수
+        let globalData = [];
+        let headers = [];
+        let chartInstance = null;
+
+        // DOM 요소
+        const fileInput = document.getElementById('fileInput');
+        const encodingSelect = document.getElementById('encodingSelect');
+        const chartTypeSelect = document.getElementById('chartTypeSelect');
+        const xAxisSelect = document.getElementById('xAxisSelect');
+        const yAxisSelect = document.getElementById('yAxisSelect');
+        const placeholderText = document.getElementById('placeholderText');
+        const ctx = document.getElementById('myChart').getContext('2d');
+
+        // 1. CSV 파싱 로직 (PapaParse 활용)
+        function parseCSV() {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const selectedEncoding = encodingSelect.value;
+
+            Papa.parse(file, {
+                encoding: selectedEncoding,
+                header: true,         // 첫 줄을 헤더로 인식
+                skipEmptyLines: true, // 빈 줄 무시
+                complete: function(results) {
+                    globalData = results.data;
+                    
+                    if (globalData.length > 0) {
+                        headers = Object.keys(globalData[0]);
+                        updateAxisSelects();
+                        drawChart();
                     }
+                },
+                error: function(err) {
+                    alert("파일을 읽는 중 문제가 발생했습니다: " + err.message);
                 }
+            });
+        }
+
+        // 2. 드롭다운(X축, Y축) 옵션 업데이트
+        function updateAxisSelects() {
+            xAxisSelect.innerHTML = '';
+            yAxisSelect.innerHTML = '';
+            xAxisSelect.disabled = false;
+            yAxisSelect.disabled = false;
+
+            headers.forEach(header => {
+                xAxisSelect.add(new Option(header, header));
+                yAxisSelect.add(new Option(header, header));
+            });
+
+            // Y축의 기본값은 보통 숫자가 많은 두 번째 열로 설정
+            if (headers.length > 1) {
+                yAxisSelect.selectedIndex = 1;
             }
         }
-    </script>
-    <!-- React & ReactDOM CDN -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-    <!-- Babel CDN (JSX 변환용) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- SheetJS CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- 한글 웹 폰트(Noto Sans KR) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+        // 3. 차트 그리기 로직
+        function drawChart() {
+            if (!globalData || globalData.length === 0) return;
 
-    <style>
-        body {
-            background-color: #0F172A;
-            color: #F8FAFC;
-            font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        }
-        .gradient-text {
-            background: linear-gradient(135deg, #60A5FA 0%, #A855F7 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
+            placeholderText.style.display = 'none'; // 안내 문구 숨김
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+            const xAxis = xAxisSelect.value;
+            const yAxis = yAxisSelect.value;
+            const chartType = chartTypeSelect.value;
 
-        function App() {
-            const [data, setData] = useState(null);
-            const [fileName, setFileName] = useState('');
-            const [columns, setColumns] = useState([]);
-            const [xAxis, setXAxis] = useState('');
-            const [yAxis, setYAxis] = useState('');
-            const [chartType, setChartType] = useState('bar');
-            const [colorTheme, setColorTheme] = useState('indigo');
-            const [aiDiagnosis, setAiDiagnosis] = useState(null);
-            const [isLoading, setIsLoading] = useState(false);
-            
-            const chartRef = useRef(null);
-            const chartInstance = useRef(null);
+            const labels = [];
+            const dataValues = [];
 
-            const colorPalettes = {
-                indigo: ['#6366F1', '#818CF8', '#A5B4FC', '#C7D2FE', '#E0E7FF'],
-                emerald: ['#10B981', '#34D399', '#6EE7B7', '#A7F3D0', '#D1FAE5'],
-                purple: ['#A855F7', '#C084FC', '#E9D5FF', '#F3E8FF', '#FAF5FF'],
-                sunset: ['#F43F5E', '#FB7185', '#FBBF24', '#38BDF8', '#818CF8']
-            };
-
-            const processData = (jsonData, name) => {
-                setIsLoading(true);
-                setFileName(name);
-                setData(jsonData);
-
-                if (jsonData && jsonData.length > 0) {
-                    const keys = Object.keys(jsonData[0]);
-                    setColumns(keys);
-
-                    let detectedX = keys[0];
-                    let detectedY = keys[1] || keys[0];
-
-                    for (const key of keys) {
-                        const sampleVal = jsonData[0][key];
-                        if (typeof sampleVal === 'number' && detectedY === keys[1]) {
-                            detectedY = key;
-                        } else if (typeof sampleVal === 'string' && detectedX === keys[0]) {
-                            detectedX = key;
-                        }
-                    }
-
-                    setXAxis(detectedX);
-                    setYAxis(detectedY);
-
-                    runAiDiagnosis(jsonData, keys);
-                }
-                setIsLoading(false);
-            };
-
-            const runAiDiagnosis = (jsonData, keys) => {
-                let nullCount = 0;
-                let totalCells = jsonData.length * keys.length;
-                let numericColumns = [];
-                let nonNumericColumns = [];
-
-                keys.forEach(key => {
-                    let hasNumeric = false;
-                    jsonData.forEach(row => {
-                        if (row[key] === null || row[key] === undefined || row[key] === '') {
-                            nullCount++;
-                        }
-                        if (typeof row[key] === 'number') {
-                            hasNumeric = true;
-                        }
-                    });
-                    if (hasNumeric) numericColumns.push(key);
-                    else nonNumericColumns.push(key);
-                });
-
-                const completenessScore = Math.max(0, Math.round(((totalCells - nullCount) / totalCells) * 100));
+            // 데이터 정제 및 추출
+            globalData.forEach(row => {
+                // X축 데이터 추출
+                labels.push(row[xAxis] || 'N/A');
                 
-                let issues = [];
-                let suggestions = [];
-
-                if (nullCount > 0) {
-                    issues.push(`총 ${nullCount}개의 빈 칸(결측치)이 발견되었습니다.`);
-                    suggestions.push('비어있는 셀을 0이나 평균값으로 채우거나 해당 행을 정리해 주세요.');
+                // Y축 데이터 추출 및 정제 (공공데이터의 1,000 단위 콤마 제거)
+                let rawValue = row[yAxis];
+                if (typeof rawValue === 'string') {
+                    rawValue = rawValue.replace(/,/g, ''); // 모든 콤마 제거
                 }
-                if (numericColumns.length === 0) {
-                    issues.push('수치형(숫자) 데이터가 존재하지 않아 그래프 작성이 제한됩니다.');
-                    suggestions.push('엑셀의 숫자가 문자로 인식되어 있는지 확인하고 숫자로 변환해 주세요.');
-                }
-                if (jsonData.length < 2) {
-                    issues.push('데이터 행 개수가 너무 적습니다.');
-                    suggestions.push('최소 2개 이상의 행 데이터가 필요합니다.');
-                }
+                
+                const numValue = parseFloat(rawValue);
+                dataValues.push(isNaN(numValue) ? 0 : numValue);
+            });
 
-                if (issues.length === 0) {
-                    issues.push('특이사항 없음: 완벽하게 정리된 데이터셋입니다.');
-                    suggestions.push('추천 차트를 활용해 즉시 보고서용 시각화 자료를 제작할 수 있습니다.');
-                }
+            // 기존 차트가 있다면 파괴 후 재생성
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
 
-                setAiDiagnosis({
-                    score: completenessScore,
-                    totalRows: jsonData.length,
-                    totalCols: keys.length,
-                    numericCols: numericColumns.length,
-                    issues,
-                    suggestions
-                });
-            };
-
-            // 바이트 배열을 그대로 SheetJS에 전달하여 인코딩 깨짐을 방지하는 로직
-            const handleFileUpload = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-            
-                const reader = new FileReader();
-                reader.onload = (evt) => {
-                    try {
-                        const data = new Uint8Array(evt.target.result);
-                        
-                        // SheetJS의 codepage 옵션과 함께 array 타입으로 직접 파싱
-                        const wb = XLSX.read(data, { 
-                            type: 'array',
-                            codepage: 949 // 한국어 CP949 / EUC-KR 지정
-                        });
-            
-                        const wsname = wb.SheetNames[0];
-                        const ws = wb.Sheets[wsname];
-                        const jsonData = XLSX.utils.sheet_to_json(ws);
-            
-                        processData(jsonData, file.name);
-                    } catch (err) {
-                        console.error(err);
-                        alert('파일을 읽는 중 오류가 발생했습니다.');
-                    }
-                };
-                reader.readAsArrayBuffer(file);
-            };
-            
-            const loadSampleData = (type) => {
-                let sample = [];
-                let name = '';
-
-                if (type === 'sales') {
-                    name = '2026_IT_매출분석_샘플.xlsx';
-                    sample = [
-                        { 부서: '클라우드 팀', 매출액: 4500, 목표: 4000 },
-                        { 부서: 'AI 솔루션 팀', 매출액: 6800, 목표: 5000 },
-                        { 부서: '보안 솔루션', 매출액: 3200, 목표: 3500 },
-                        { 부서: '데이터 분석', 매출액: 5100, 목표: 4500 },
-                        { 부서: '모바일 개발', 매출액: 2900, 목표: 3000 }
-                    ];
-                } else if (type === 'marketing') {
-                    name = '2026_마케팅_ROI_분석.xlsx';
-                    sample = [
-                        { 채널: '검색 광고', 전환수: 1200, 비용: 300 },
-                        { 채널: 'SNS 광고', 전환수: 2400, 비용: 550 },
-                        { 채널: '인플루언서', 전환수: 1800, 비용: 800 },
-                        { 채널: '이메일 마케팅', 전환수: 600, 비용: 100 },
-                        { 채널: '콘텐츠 마케팅', 전환수: 950, 비용: 250 }
-                    ];
-                }
-                processData(sample, name);
-            };
-
-            useEffect(() => {
-                if (!data || !xAxis || !yAxis || !chartRef.current) return;
-
-                if (chartInstance.current) {
-                    chartInstance.current.destroy();
-                }
-
-                const ctx = chartRef.current.getContext('2d');
-                const labels = data.map(row => row[xAxis] ?? 'N/A');
-                const values = data.map(row => Number(row[yAxis]) || 0);
-
-                const palette = colorPalettes[colorTheme];
-
-                Chart.defaults.font.family = "'Noto Sans KR', sans-serif";
-
-                chartInstance.current = new Chart(ctx, {
-                    type: chartType,
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: yAxis,
-                            data: values,
-                            backgroundColor: chartType === 'pie' || chartType === 'doughnut' ? palette : palette[0],
-                            borderColor: palette[0],
-                            borderWidth: 1,
-                            borderRadius: chartType === 'bar' ? 6 : 0
-                        }]
+            // Chart.js 렌더링
+            chartInstance = new Chart(ctx, {
+                type: chartType,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: yAxis,
+                        data: dataValues,
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)', // 파란색 반투명
+                        borderColor: 'rgb(37, 99, 235)',         // 진한 파란색
+                        borderWidth: 1,
+                        borderRadius: chartType === 'bar' ? 4 : 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                font: { family: "'Malgun Gothic', sans-serif", size: 14 }
+                            }
+                        }
                     },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                labels: { 
-                                    color: '#F8FAFC',
-                                    font: { family: "'Noto Sans KR', sans-serif" }
-                                }
-                            }
+                    scales: {
+                        x: {
+                            ticks: { font: { family: "'Malgun Gothic', sans-serif" } }
                         },
-                        scales: chartType !== 'pie' && chartType !== 'doughnut' && chartType !== 'radar' ? {
-                            x: {
-                                ticks: { 
-                                    color: '#94A3B8',
-                                    font: { family: "'Noto Sans KR', sans-serif" }
-                                },
-                                grid: { color: '#334155' }
-                            },
-                            y: {
-                                ticks: { 
-                                    color: '#94A3B8',
-                                    font: { family: "'Noto Sans KR', sans-serif" }
-                                },
-                                grid: { color: '#334155' }
-                            }
-                        } : {}
+                        y: {
+                            beginAtZero: true,
+                            ticks: { font: { family: "'Malgun Gothic', sans-serif" } }
+                        }
                     }
-                });
-            }, [data, xAxis, yAxis, chartType, colorTheme]);
-
-            const downloadChart = () => {
-                if (!chartInstance.current) return;
-                const imageURI = chartInstance.current.toBase64Image();
-                const link = document.createElement('a');
-                link.download = `${fileName.replace(/\.[^/.]+$/, "")}_차트.png`;
-                link.href = imageURI;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            };
-
-            return (
-                <div className="min-h-screen flex flex-col">
-                    <header className="border-b border-dark-border bg-dark-card/90 sticky top-0 z-50 backdrop-blur-md">
-                        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center font-bold text-xl shadow-lg shadow-indigo-500/30">
-                                    📊
-                                </div>
-                                <span className="text-xl font-bold tracking-tight gradient-text">AutoViz AI</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <button onClick={() => loadSampleData('sales')} className="px-4 py-2 text-sm rounded-lg bg-dark-border hover:bg-slate-700 transition">
-                                    💡 매출 샘플 데이터
-                                </button>
-                                <button onClick={() => loadSampleData('marketing')} className="px-4 py-2 text-sm rounded-lg bg-dark-border hover:bg-slate-700 transition">
-                                    🎯 마케팅 샘플 데이터
-                                </button>
-                            </div>
-                        </div>
-                    </header>
-
-                    <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
-                        {!data && (
-                            <div className="border-2 border-dashed border-dark-border hover:border-indigo-500 rounded-2xl p-12 text-center bg-dark-card/50 transition cursor-pointer flex flex-col items-center justify-center min-h-[350px]">
-                                <input 
-                                    type="file" 
-                                    accept=".xlsx, .xls, .csv" 
-                                    onChange={handleFileUpload} 
-                                    className="hidden" 
-                                    id="fileUpload" 
-                                />
-                                <label htmlFor="fileUpload" className="cursor-pointer flex flex-col items-center">
-                                    <div className="w-16 h-16 bg-indigo-500/10 text-indigo-400 rounded-full flex items-center justify-center text-3xl mb-4">
-                                        📁
-                                    </div>
-                                    <h3 className="text-xl font-semibold mb-2">엑셀(.xlsx, .csv) 파일을 끌어놓거나 클릭하세요</h3>
-                                    <p className="text-dark-subtext text-sm max-w-md">
-                                        첨부해주신 데이터를 자동으로 분석하여 최적의 그래프와 AI 정제 리포트를 즉시 생성합니다.
-                                    </p>
-                                </label>
-                            </div>
-                        )}
-
-                        {data && (
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                <div className="space-y-6">
-                                    <div className="bg-dark-card border border-dark-border p-5 rounded-2xl">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <span className="text-xs text-indigo-400 font-semibold uppercase tracking-wider">업로드된 파일</span>
-                                            <label htmlFor="fileUploadChange" className="text-xs text-dark-subtext hover:text-white cursor-pointer underline">
-                                                파일 교체
-                                            </label>
-                                            <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} className="hidden" id="fileUploadChange" />
-                                        </div>
-                                        <div className="font-medium text-lg truncate">📄 {fileName}</div>
-                                        <div className="text-xs text-dark-subtext mt-1">총 {data.length}개 행 읽음 완료</div>
-                                    </div>
-
-                                    <div className="bg-dark-card border border-dark-border p-5 rounded-2xl space-y-4">
-                                        <h3 className="font-semibold text-lg flex items-center gap-2">
-                                            ⚙️ 시각화 설정
-                                        </h3>
-                                        <div>
-                                            <label className="text-xs text-dark-subtext block mb-1">X축 (기준 데이터)</label>
-                                            <select value={xAxis} onChange={(e) => setXAxis(e.target.value)} className="w-full bg-dark-bg border border-dark-border rounded-lg p-2.5 text-sm">
-                                                {columns.map(col => <option key={col} value={col}>{col}</option>)}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-dark-subtext block mb-1">Y축 (수치 데이터)</label>
-                                            <select value={yAxis} onChange={(e) => setYAxis(e.target.value)} className="w-full bg-dark-bg border border-dark-border rounded-lg p-2.5 text-sm">
-                                                {columns.map(col => <option key={col} value={col}>{col}</option>)}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-dark-subtext block mb-1">차트 종류</label>
-                                            <div className="grid grid-cols-3 gap-2">
-                                                {['bar', 'line', 'pie', 'doughnut', 'radar'].map(type => (
-                                                    <button 
-                                                        key={type} 
-                                                        onClick={() => setChartType(type)} 
-                                                        className={`p-2 rounded-lg border text-xs font-medium capitalize transition ${chartType === type ? 'bg-indigo-600 border-indigo-500' : 'bg-dark-bg border-dark-border hover:bg-slate-800'}`}
-                                                    >
-                                                        {type}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-dark-subtext block mb-1">컬러 테마</label>
-                                            <div className="flex gap-2">
-                                                {Object.keys(colorPalettes).map(theme => (
-                                                    <button 
-                                                        key={theme} 
-                                                        onClick={() => setColorTheme(theme)} 
-                                                        className={`flex-1 py-1.5 rounded-md text-xs font-medium capitalize border ${colorTheme === theme ? 'border-indigo-400 bg-slate-700' : 'border-dark-border bg-dark-bg'}`}
-                                                    >
-                                                        {theme}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {aiDiagnosis && (
-                                        <div className="bg-dark-card border border-dark-border p-5 rounded-2xl space-y-3">
-                                            <div className="flex items-center justify-between">
-                                                <h3 className="font-semibold text-lg flex items-center gap-2">🤖 AI 진단 리포트</h3>
-                                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${aiDiagnosis.score >= 90 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                                                    건강도: {aiDiagnosis.score}점
-                                                </span>
-                                            </div>
-                                            <div className="space-y-2 text-xs">
-                                                <div className="p-3 bg-dark-bg rounded-lg border border-dark-border">
-                                                    <div className="font-semibold text-slate-300 mb-1">🔍 감지된 특이사항</div>
-                                                    <ul className="list-disc list-inside text-dark-subtext space-y-1">
-                                                        {aiDiagnosis.issues.map((issue, idx) => <li key={idx}>{issue}</li>)}
-                                                    </ul>
-                                                </div>
-                                                <div className="p-3 bg-dark-bg rounded-lg border border-dark-border">
-                                                    <div className="font-semibold text-slate-300 mb-1">💡 데이터 개선 권장사항</div>
-                                                    <ul className="list-disc list-inside text-dark-subtext space-y-1">
-                                                        {aiDiagnosis.suggestions.map((sug, idx) => <li key={idx}>{sug}</li>)}
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="lg:col-span-2 bg-dark-card border border-dark-border p-6 rounded-2xl flex flex-col justify-between">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h2 className="text-xl font-bold">{yAxis} 기준 시각화</h2>
-                                        <button onClick={downloadChart} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg font-medium shadow-md transition flex items-center gap-2">
-                                            📥 PNG 차트 다운로드
-                                        </button>
-                                    </div>
-                                    <div className="flex-1 min-h-[420px] relative flex items-center justify-center">
-                                        <canvas ref={chartRef}></canvas>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </main>
-                </div>
-            );
+                }
+            });
         }
 
-        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+        // 이벤트 리스너 등록
+        fileInput.addEventListener('change', parseCSV);
+        encodingSelect.addEventListener('change', () => {
+            if (fileInput.files.length > 0) parseCSV(); // 인코딩 변경 시 즉시 재파싱
+        });
+        chartTypeSelect.addEventListener('change', drawChart);
+        xAxisSelect.addEventListener('change', drawChart);
+        yAxisSelect.addEventListener('change', drawChart);
     </script>
 </body>
 </html>
