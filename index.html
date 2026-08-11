@@ -161,61 +161,44 @@
                 });
             };
 
-            // 파일 업로드 처리 (공공데이터 CSV EUC-KR 완전 대응)
+            // 완벽한 한글 디코딩을 위한 ArrayBuffer + TextDecoder 조합 로직
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
 
-                const isCsv = file.name.endsWith('.csv');
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const buffer = evt.target.result;
+                        let text = '';
 
-                // CSV 파일인 경우 브라우저 인코딩(EUC-KR) 우선 처리
-                if (isCsv) {
-                    const reader = new FileReader();
-                    reader.onload = (evt) => {
+                        // 1. EUC-KR 디코더로 직접 변환 시도
                         try {
-                            let text = evt.target.result;
-                            
-                            // 한글 깨짐 검사 (깨진 특수문자 포함 시 UTF-8로 재시도)
-                            if (text.includes('') || text.includes('½') || text.includes('¾')) {
-                                const utf8Reader = new FileReader();
-                                utf8Reader.onload = (utfEvt) => {
-                                    parseCsvString(utfEvt.target.result, file.name);
-                                };
-                                utf8Reader.readAsText(file, 'utf-8');
-                            } else {
-                                parseCsvString(text, file.name);
-                            }
+                            const decoder = new TextDecoder('euc-kr');
+                            text = decoder.decode(buffer);
                         } catch (err) {
-                            alert('CSV 파일을 읽는 중 오류가 발생했습니다.');
+                            const decoder = new TextDecoder('utf-8');
+                            text = decoder.decode(buffer);
                         }
-                    };
-                    reader.readAsText(file, 'euc-kr');
-                } else {
-                    // XLSX 일반 엑셀 파일 처리
-                    const reader = new FileReader();
-                    reader.onload = (evt) => {
-                        try {
-                            const bstr = evt.target.result;
-                            const wb = XLSX.read(bstr, { type: 'binary' });
-                            const wsname = wb.SheetNames[0];
-                            const ws = wb.Sheets[wsname];
-                            const jsonData = XLSX.utils.sheet_to_json(ws);
-                            processData(jsonData, file.name);
-                        } catch (err) {
-                            alert('엑셀 파일을 읽는 중 오류가 발생했습니다.');
-                        }
-                    };
-                    reader.readAsBinaryString(file);
-                }
-            };
 
-            // CSV 텍스트 문자열 파싱 함수
-            const parseCsvString = (csvText, fileName) => {
-                const wb = XLSX.read(csvText, { type: 'string' });
-                const wsname = wb.SheetNames[0];
-                const ws = wb.Sheets[wsname];
-                const jsonData = XLSX.utils.sheet_to_json(ws);
-                processData(jsonData, fileName);
+                        // 디코딩 결과에 물음표 깨짐()이 존재하면 UTF-8로 재디코딩
+                        if (text.includes('')) {
+                            const utf8Decoder = new TextDecoder('utf-8');
+                            text = utf8Decoder.decode(buffer);
+                        }
+
+                        // 디코딩된 텍스트를 SheetJS로 변환
+                        const wb = XLSX.read(text, { type: 'string' });
+                        const wsname = wb.SheetNames[0];
+                        const ws = wb.Sheets[wsname];
+                        const jsonData = XLSX.utils.sheet_to_json(ws);
+
+                        processData(jsonData, file.name);
+                    } catch (err) {
+                        alert('파일을 읽는 중 오류가 발생했습니다.');
+                    }
+                };
+                reader.readAsArrayBuffer(file);
             };
 
             const loadSampleData = (type) => {
