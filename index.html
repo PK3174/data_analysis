@@ -161,46 +161,35 @@
                 });
             };
 
-            // 완벽한 한글 디코딩을 위한 ArrayBuffer + TextDecoder 조합 로직
+            // 바이트 배열을 그대로 SheetJS에 전달하여 인코딩 깨짐을 방지하는 로직
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-
+            
                 const reader = new FileReader();
                 reader.onload = (evt) => {
                     try {
-                        const buffer = evt.target.result;
-                        let text = '';
-
-                        // 1. EUC-KR 디코더로 직접 변환 시도
-                        try {
-                            const decoder = new TextDecoder('euc-kr');
-                            text = decoder.decode(buffer);
-                        } catch (err) {
-                            const decoder = new TextDecoder('utf-8');
-                            text = decoder.decode(buffer);
-                        }
-
-                        // 디코딩 결과에 물음표 깨짐()이 존재하면 UTF-8로 재디코딩
-                        if (text.includes('')) {
-                            const utf8Decoder = new TextDecoder('utf-8');
-                            text = utf8Decoder.decode(buffer);
-                        }
-
-                        // 디코딩된 텍스트를 SheetJS로 변환
-                        const wb = XLSX.read(text, { type: 'string' });
+                        const data = new Uint8Array(evt.target.result);
+                        
+                        // SheetJS의 codepage 옵션과 함께 array 타입으로 직접 파싱
+                        const wb = XLSX.read(data, { 
+                            type: 'array',
+                            codepage: 949 // 한국어 CP949 / EUC-KR 지정
+                        });
+            
                         const wsname = wb.SheetNames[0];
                         const ws = wb.Sheets[wsname];
                         const jsonData = XLSX.utils.sheet_to_json(ws);
-
+            
                         processData(jsonData, file.name);
                     } catch (err) {
+                        console.error(err);
                         alert('파일을 읽는 중 오류가 발생했습니다.');
                     }
                 };
                 reader.readAsArrayBuffer(file);
             };
-
+            
             const loadSampleData = (type) => {
                 let sample = [];
                 let name = '';
