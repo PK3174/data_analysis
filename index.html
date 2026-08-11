@@ -73,6 +73,9 @@
             const [aiDiagnosis, setAiDiagnosis] = useState(null);
             const [isLoading, setIsLoading] = useState(false);
             
+            // TOP 5 토글 상태 추가
+            const [showTop5, setShowTop5] = useState(false);
+            
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
 
@@ -87,6 +90,7 @@
                 setIsLoading(true);
                 setFileName(name);
                 setData(jsonData);
+                setShowTop5(false); // 데이터가 새로 로드되면 TOP 5 초기화
 
                 if (jsonData && jsonData.length > 0) {
                     const keys = Object.keys(jsonData[0]);
@@ -166,7 +170,7 @@
                 });
             };
 
-            // 핵심 수정 포인트: 파일 확장자에 따른 분기 처리
+            // 파일 확장자에 따른 분기 처리 (CSV / Excel)
             const handleFileUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -174,20 +178,17 @@
                 const fileExtension = file.name.split('.').pop().toLowerCase();
 
                 if (fileExtension === 'csv') {
-                    // CSV 파일은 PapaParse를 사용하여 EUC-KR로 안전하게 디코딩
                     Papa.parse(file, {
-                        encoding: "EUC-KR", // 공공데이터포털 기본 인코딩
+                        encoding: "EUC-KR", 
                         header: true,
                         skipEmptyLines: true,
                         complete: function(results) {
-                            // 공공데이터 특유의 콤마(예: "1,000")가 들어간 문자열을 숫자로 변환
                             const cleanedData = results.data.map(row => {
                                 const newRow = {};
                                 for (let key in row) {
                                     let val = row[key];
                                     if (typeof val === 'string') {
                                         let trimmed = val.trim();
-                                        // 콤마가 포함된 숫자 형태인지 정규식 검사
                                         if (/^[-+]?[0-9]{1,3}(,[0-9]{3})*(\.[0-9]+)?$/.test(trimmed) && trimmed !== "") {
                                             newRow[key] = Number(trimmed.replace(/,/g, ''));
                                         } else {
@@ -206,7 +207,6 @@
                         }
                     });
                 } else {
-                    // 엑셀(.xlsx, .xls) 파일은 자체 포맷이므로 SheetJS 사용
                     const reader = new FileReader();
                     reader.onload = (evt) => {
                         try {
@@ -236,7 +236,9 @@
                         { 부서: 'AI 솔루션 팀', 매출액: 6800, 목표: 5000 },
                         { 부서: '보안 솔루션', 매출액: 3200, 목표: 3500 },
                         { 부서: '데이터 분석', 매출액: 5100, 목표: 4500 },
-                        { 부서: '모바일 개발', 매출액: 2900, 목표: 3000 }
+                        { 부서: '모바일 개발', 매출액: 2900, 목표: 3000 },
+                        { 부서: '인프라 관리', 매출액: 1500, 목표: 2000 },
+                        { 부서: '웹 개발', 매출액: 2100, 목표: 2500 }
                     ];
                 } else if (type === 'marketing') {
                     name = '2026_마케팅_ROI_분석.xlsx';
@@ -245,12 +247,15 @@
                         { 채널: 'SNS 광고', 전환수: 2400, 비용: 550 },
                         { 채널: '인플루언서', 전환수: 1800, 비용: 800 },
                         { 채널: '이메일 마케팅', 전환수: 600, 비용: 100 },
-                        { 채널: '콘텐츠 마케팅', 전환수: 950, 비용: 250 }
+                        { 채널: '콘텐츠 마케팅', 전환수: 950, 비용: 250 },
+                        { 채널: '오프라인 행사', 전환수: 300, 비용: 500 },
+                        { 채널: '제휴 마케팅', 전환수: 1500, 비용: 400 }
                     ];
                 }
                 processData(sample, name);
             };
 
+            // 차트 렌더링 Effect
             useEffect(() => {
                 if (!data || !xAxis || !yAxis || !chartRef.current) return;
 
@@ -259,9 +264,20 @@
                 }
 
                 const ctx = chartRef.current.getContext('2d');
-                const labels = data.map(row => row[xAxis] ?? 'N/A');
-                // Y축 값이 숫자가 아니면 0으로 처리
-                const values = data.map(row => {
+                
+                // TOP 5 필터링 로직 적용
+                let processedData = [...data];
+                
+                if (showTop5) {
+                    processedData.sort((a, b) => {
+                        const valA = Number(String(a[yAxis]).replace(/,/g, '')) || 0;
+                        const valB = Number(String(b[yAxis]).replace(/,/g, '')) || 0;
+                        return valB - valA; // 내림차순 정렬
+                    }).splice(5); // 상위 5개만 남기고 자름
+                }
+
+                const labels = processedData.map(row => row[xAxis] ?? 'N/A');
+                const values = processedData.map(row => {
                     const val = row[yAxis];
                     if (typeof val === 'number') return val;
                     if (typeof val === 'string') return Number(val.replace(/,/g, '')) || 0;
@@ -269,7 +285,6 @@
                 });
 
                 const palette = colorPalettes[colorTheme];
-
                 Chart.defaults.font.family = "'Noto Sans KR', sans-serif";
 
                 chartInstance.current = new Chart(ctx, {
@@ -314,7 +329,7 @@
                         } : {}
                     }
                 });
-            }, [data, xAxis, yAxis, chartType, colorTheme]);
+            }, [data, xAxis, yAxis, chartType, colorTheme, showTop5]); // showTop5가 변경될 때마다 차트 재렌더링
 
             const downloadChart = () => {
                 if (!chartInstance.current) return;
@@ -459,7 +474,16 @@
 
                                 <div className="lg:col-span-2 bg-dark-card border border-dark-border p-6 rounded-2xl flex flex-col justify-between">
                                     <div className="flex items-center justify-between mb-4">
-                                        <h2 className="text-xl font-bold">{yAxis} 기준 시각화</h2>
+                                        <div className="flex items-center gap-4">
+                                            <h2 className="text-xl font-bold">{yAxis} 기준 시각화</h2>
+                                            {/* TOP 5 토글 버튼 */}
+                                            <button 
+                                                onClick={() => setShowTop5(!showTop5)}
+                                                className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all duration-300 ${showTop5 ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-dark-border text-dark-subtext hover:bg-slate-700 hover:text-white'}`}
+                                            >
+                                                {showTop5 ? '🏆 TOP 5 켜짐' : '🏆 TOP 5 보기'}
+                                            </button>
+                                        </div>
                                         <button onClick={downloadChart} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg font-medium shadow-md transition flex items-center gap-2">
                                             📥 PNG 차트 다운로드
                                         </button>
